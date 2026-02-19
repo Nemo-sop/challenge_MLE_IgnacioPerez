@@ -1,0 +1,55 @@
+name: Continuous Delivery
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GAR_LOCATION: ${{ secrets.GAR_LOCATION }}
+      GAR_REPOSITORY: ${{ secrets.GAR_REPOSITORY }}
+      CLOUD_RUN_SERVICE: ${{ secrets.CLOUD_RUN_SERVICE }}
+      CLOUD_RUN_REGION: ${{ secrets.CLOUD_RUN_REGION }}
+      IMAGE_NAME: challenge-mle
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${GAR_LOCATION}-docker.pkg.dev" --quiet
+
+      - name: Build and push image
+        run: |
+          IMAGE_URI="${GAR_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GAR_REPOSITORY}/${IMAGE_NAME}"
+          docker build -t "${IMAGE_URI}:${GITHUB_SHA}" -t "${IMAGE_URI}:latest" .
+          docker push "${IMAGE_URI}:${GITHUB_SHA}"
+          docker push "${IMAGE_URI}:latest"
+          echo "IMAGE_URI=${IMAGE_URI}:${GITHUB_SHA}" >> "${GITHUB_ENV}"
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.CLOUD_RUN_SERVICE }}
+          region: ${{ env.CLOUD_RUN_REGION }}
+          image: ${{ env.IMAGE_URI }}
+          flags: --allow-unauthenticated
