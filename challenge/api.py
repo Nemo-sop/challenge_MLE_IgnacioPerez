@@ -23,7 +23,7 @@ def _startup() -> None:
 
 @app.get("/health", status_code=status.HTTP_200_OK)
 async def get_health() -> dict:
-    return {"status": "OK"}
+    return {"status": "Up and Running"}
 
 
 @app.post("/predict", status_code=status.HTTP_200_OK)
